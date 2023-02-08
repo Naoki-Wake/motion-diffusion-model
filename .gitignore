@@ -127,3 +127,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+save/
+dataset/HumanAct12Poses
+dataset/uestc
+body_models/smpl
+assets/actionrecognition
+
+.vscode/

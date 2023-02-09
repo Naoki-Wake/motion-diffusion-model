@@ -203,12 +203,16 @@ dependencies:
   - zlib=1.2.13=h5eee18b_0
   - zstd=1.5.2=ha4553b6_0
   - pip:
+    - blobfile==2.0.1
     - chumpy==0.70
     - clip==1.0
     - en-core-web-sm==3.3.0
     - ftfy==6.1.1
+    - lxml==4.9.2
     - numpy==1.22.4
+    - pycryptodomex==3.17
     - pydantic==1.8.2
+    - pyyaml==6.0
     - regex==2022.10.31
     - smplx==0.1.28
     - wcwidth==0.2.6

@@ -129,8 +129,11 @@ dmypy.json
 .pyre/
 
 save/
+glove/
 dataset/HumanAct12Poses
 dataset/uestc
+dataset/HumanML3D
+dataset/KIT-ML
 body_models/smpl
 assets/actionrecognition
 

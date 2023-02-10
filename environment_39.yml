@@ -1,8 +1,8 @@
 name: py39
 channels:
-  - anaconda
   - pytorch
   - nvidia
+  - anaconda
   - conda-forge
   - defaults
 dependencies:
@@ -75,6 +75,8 @@ dependencies:
   - gnutls=3.6.15=he1e5248_0
   - gst-plugins-base=1.14.0=h8213a91_2
   - gstreamer=1.14.0=h28cd5cc_2
+  - h5py=3.7.0=py39h737f45e_0
+  - hdf5=1.10.6=hb1b8bf9_0
   - icu=58.2=hf484d3e_1000
   - idna=3.4=py39h06a4308_0
   - intel-openmp=2021.4.0=h06a4308_3561
@@ -192,6 +194,7 @@ dependencies:
   - torchvision=0.14.1=py39_cu117
   - tornado=6.1=py39hb9d737c_3
   - tqdm=4.64.1=pyhd8ed1ab_0
+  - trimesh=3.18.3=pyhd8ed1ab_0
   - typer=0.4.2=pyhd8ed1ab_0
   - typing-extensions=4.4.0=py39h06a4308_0
   - typing_extensions=4.4.0=py39h06a4308_0

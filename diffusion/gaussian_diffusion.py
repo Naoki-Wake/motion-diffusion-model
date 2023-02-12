@@ -16,6 +16,7 @@ from copy import deepcopy
 from diffusion.nn import mean_flat, sum_flat
 from diffusion.losses import normal_kl, discretized_gaussian_log_likelihood
 from data_loaders.humanml.scripts import motion_process
+import data_loaders.humanml_utils as hml_utils
 
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, scale_betas=1.):
     """
@@ -303,7 +304,156 @@ class GaussianDiffusion:
         B, C = x.shape[:2]
         assert t.shape == (B,)
         model_output = model(x, self._scale_timesteps(t), **model_kwargs)
+        #import pdb; pdb.set_trace()
 
+
+        if False: # This code is how to modify the model_output when it is in the rot6d format
+            #import pdb; pdb.set_trace()
+            #for item in model_output[0]:
+            #    import utils.rotation_conversions as geometry
+            #    pos = geometry.rotation_6d_to_matrix(model_output[0].permute(2,0,1))
+            #
+            motion_tensor_cpu = np.load('edit_frame.npy')
+            motion_tensor_cuda = torch.from_numpy(motion_tensor_cpu).cuda()
+            model_output[:,:,:,0] = motion_tensor_cuda[:,:,:,0]
+            # copy the last 9 frames with the last frame of motion_tensor_cuda
+            #for jj in range(15):
+            #    blend = jj/14.0
+            for jj in range(30):
+                blend = jj/29.0
+                #blend=0
+                model_output[:,:,:,jj] = model_output[:,:,:,jj] * blend + motion_tensor_cuda[:,:,:,0] * (1-blend)
+                model_output[:,:,:,-jj-1] = model_output[:,:,:,-jj-1] * blend + motion_tensor_cuda[:,:,:,59] * (1-blend)
+            #model_output[:,:,:,55:60] = motion_tensor_cuda[:,:,:,59].unsqueeze(3).repeat(1,1,1,5)
+            #model_output[:,:,:,0:5] = motion_tensor_cuda[:,:,:,0].unsqueeze(3).repeat(1,1,1,5)
+            #import pdb; pdb.set_trace()
+            if False: # just before the last step
+
+                #def Transform(x, mask, jointstype):
+                #    import torch
+                #    import torch.nn.functional as F
+    #
+                #    def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
+                #        a1, a2 = d6[..., :3], d6[..., 3:]
+                #        b1 = F.normalize(a1, dim=-1)
+                #        b2 = a2 - (b1 * a2).sum(-1, keepdim=True) * b1
+                #        b2 = F.normalize(b2, dim=-1)
+                #        b3 = torch.cross(b1, b2, dim=-1)
+                #        return torch.stack((b1, b2, b3), dim=-2)
+                #    def matrix_to_rotation_6d(matrix: torch.Tensor) -> torch.Tensor:
+                #        return matrix[..., :2, :].clone().reshape(*matrix.size()[:-2], 6)
+    #
+                #    JOINTSTYPE_ROOT = {"a2m": 0, # action2motion
+                #                    "smpl": 0,
+                #                    "a2mpl": 0, # set(smpl, a2m)
+                #                    "vibe": 8}  # 0 is the 8 position: OP MidHip below
+    #
+                #    x_translations = x[:, -1, :3]
+                #    x_rotations = x[:, :-1]
+                #    x_rotations = x_rotations.permute(0, 3, 1, 2)
+                #    nsamples, time, njoints, feats = x_rotations.shape
+    #
+                #    # Compute rotations (convert only masked sequences output)
+                #    rotations = rotation_6d_to_matrix(x_rotations[mask])
+    #
+                #    global_orient = rotations[:, 0]
+                #    rotations = rotations[:, 1:]
+                #    pdb.set_trace()
+                #    from model.smpl import SMPL, JOINTSTYPE_ROOT
+                #    smpl_model = SMPL().eval().to('cuda:0')
+                #    out = smpl_model(body_pose=rotations, global_orient=global_orient, betas=None)
+    #
+                #    # get the desirable joints
+                #    joints = out[jointstype]
+    #
+                #    x_xyz = torch.empty(nsamples, time, joints.shape[1], 3, device=x.device, dtype=x.dtype)
+                #    x_xyz[~mask] = 0
+                #    x_xyz[mask] = joints
+    #
+                #    x_xyz = x_xyz.permute(0, 2, 3, 1).contiguous()
+    #
+                #    # the first translation root at the origin on the prediction
+                #    rootindex = 0
+                #    x_xyz = x_xyz - x_xyz[:, [rootindex], :, :]
+    #
+                #    x_translations = x_translations - x_translations[:, :, [0]]
+                #    # add the translation to all the joints
+                #    x_xyz = x_xyz + x_translations[:, None, :, :]
+    #
+                #    return x_xyz
+    #
+
+                rot2xyz_pose_rep = 'xyz' if model.model.data_rep in ['xyz', 'hml_vec'] else model.model.data_rep
+                rot2xyz_mask = model_kwargs['y']['mask'].reshape(1, 60).bool()
+                
+                sample = model.model.rot2xyz(x=model_output, mask=rot2xyz_mask, pose_rep=rot2xyz_pose_rep, glob=True, translation=True,jointstype='smpl', vertstrans=True, betas=None, beta=0, glob_rot=None,get_rotations_back=False)            
+                sample = sample.to('cpu').detach().numpy()[0].transpose(2, 0, 1)
+                sample *= -1.5 # reverse axes, scale for visualization
+                import matplotlib.pyplot as plt
+                import data_loaders.humanml.utils.paramUtil as paramUtil
+                indexes = [0, 59]
+                for index in indexes:
+                    fig = plt.figure(figsize=(5,5))
+                    plt.tight_layout()
+                    #ax = p3.Axes3D(fig)
+                    ax = plt.axes(projection='3d')
+                    ax.view_init(elev=120, azim=-90)
+                    kinematic_tree = paramUtil.t2m_kinematic_chain
+                    used_colors = ["#DD5A37", "#D69E00", "#B75A39", "#FF6D00", "#DDB50E"]
+                    for i, (chain, color) in enumerate(zip(kinematic_tree, used_colors)):
+                        if i < 5:
+                            linewidth = 4.0
+                        else:
+                            linewidth = 2.0
+                        ax.plot3D(sample[index, chain, 0], sample[index, chain, 1], sample[index, chain, 2], linewidth=linewidth, 
+                                color=color)
+                    # save the figure
+                    ax.set_aspect('equal', 'box')
+                    plt.savefig('test_{}.png'.format(index))            
+                ## DO SOME MODIFICATIONS TO THE SAMPLE
+                import data_loaders.humanml_utils as hml_utils
+                sample[59, hml_utils.HML_JOINT_NAMES.index('left_wrist'), 1] = sample[59, hml_utils.HML_JOINT_NAMES.index('left_shoulder'), 1]
+                sample[59, hml_utils.HML_JOINT_NAMES.index('left_wrist'), 0] = sample[59, hml_utils.HML_JOINT_NAMES.index('left_shoulder'), 0] - 0.1
+                sample *= -1/1.5 # reverse axes, scale for visualization
+                sample = torch.from_numpy(sample).to('cuda:0')
+                from visualize.simplify_loc2rot import joints2smpl
+                j2s = joints2smpl(num_frames=60, device_id=0, cuda=True)
+                motion_tensor, opt_dict = j2s.joint2smpl(sample)  # [nframes, njoints, 3]
+                
+                rot2xyz_pose_rep = 'xyz' if model.model.data_rep in ['xyz', 'hml_vec'] else model.model.data_rep
+                rot2xyz_mask = model_kwargs['y']['mask'].reshape(1, 60).bool()
+                
+                sample = model.model.rot2xyz(x=motion_tensor, mask=rot2xyz_mask, pose_rep=rot2xyz_pose_rep, glob=True, translation=True,jointstype='smpl', vertstrans=True, betas=None, beta=0, glob_rot=None,get_rotations_back=False)            
+                sample = sample.to('cpu').detach().numpy()[0].transpose(2, 0, 1)
+                sample *= -1.5 # reverse axes, scale for visualization
+                
+                #import pdb; pdb.set_trace()
+                import matplotlib.pyplot as plt
+                import data_loaders.humanml.utils.paramUtil as paramUtil
+                indexes = [0, 59]
+                for index in indexes:
+                    fig = plt.figure(figsize=(5,5))
+                    plt.tight_layout()
+                    #ax = p3.Axes3D(fig)
+                    ax = plt.axes(projection='3d')
+                    ax.view_init(elev=120, azim=-90)
+                    kinematic_tree = paramUtil.t2m_kinematic_chain
+                    used_colors = ["#DD5A37", "#D69E00", "#B75A39", "#FF6D00", "#DDB50E"]
+                    for i, (chain, color) in enumerate(zip(kinematic_tree, used_colors)):
+                        if i < 5:
+                            linewidth = 4.0
+                        else:
+                            linewidth = 2.0
+                        ax.plot3D(sample[index, chain, 0], sample[index, chain, 1], sample[index, chain, 2], linewidth=linewidth, 
+                                color=color)
+                    # save the figure
+                    ax.set_aspect('equal', 'box')
+                    plt.savefig('test_reconvert_{}.png'.format(index))
+                    
+                model_output = motion_tensor
+                motion_tensor_cpu = motion_tensor.to('cpu').detach().numpy()
+                # save as npy
+                #np.save('edit_frame.npy', motion_tensor_cpu)
         if 'inpainting_mask' in model_kwargs['y'].keys() and 'inpainted_motion' in model_kwargs['y'].keys():
             inpainting_mask, inpainted_motion = model_kwargs['y']['inpainting_mask'], model_kwargs['y']['inpainted_motion']
             assert self.model_mean_type == ModelMeanType.START_X, 'This feature supports only X_start pred for mow!'
@@ -312,7 +462,126 @@ class GaussianDiffusion:
             # print('model_output', model_output.shape, model_output)
             # print('inpainting_mask', inpainting_mask.shape, inpainting_mask[0,0,0,:])
             # print('inpainted_motion', inpainted_motion.shape, inpainted_motion)
+        if True: # This code is how to modify the model_output when it is in the hml_vec format
+            def qinv(q):
+                assert q.shape[-1] == 4, 'q must be a tensor of shape (*, 4)'
+                mask = torch.ones_like(q)
+                mask[..., 1:] = -mask[..., 1:]
+                return q * mask
 
+            def qrot(q, v):
+                """
+                Rotate vector(s) v about the rotation described by quaternion(s) q.
+                Expects a tensor of shape (*, 4) for q and a tensor of shape (*, 3) for v,
+                where * denotes any number of dimensions.
+                Returns a tensor of shape (*, 3).
+                """
+                assert q.shape[-1] == 4
+                assert v.shape[-1] == 3
+                assert q.shape[:-1] == v.shape[:-1]
+
+                original_shape = list(v.shape)
+                # print(q.shape)
+                q = q.contiguous().view(-1, 4)
+                v = v.contiguous().view(-1, 3)
+
+                qvec = q[:, 1:]
+                uv = torch.cross(qvec, v, dim=1)
+                uuv = torch.cross(qvec, uv, dim=1)
+                return (v + 2 * (q[:, :1] * uv + uuv)).view(original_shape)
+
+            def recover_from_ric(data, joints_num):# size of data is torch.Size([10, 1, 196, 263])
+                rot_vel = data[..., 0]
+                r_rot_ang = torch.zeros_like(rot_vel).to(data.device)
+                '''Get Y-axis rotation from rotation velocity'''
+                r_rot_ang[..., 1:] = rot_vel[..., :-1]
+                r_rot_ang = torch.cumsum(r_rot_ang, dim=-1)
+                r_rot_quat = torch.zeros(data.shape[:-1] + (4,)).to(data.device)
+                r_rot_quat[..., 0] = torch.cos(r_rot_ang)
+                r_rot_quat[..., 2] = torch.sin(r_rot_ang)
+                r_pos = torch.zeros(data.shape[:-1] + (3,)).to(data.device)
+                r_pos[..., 1:, [0, 2]] = data[..., :-1, 1:3]
+                '''Add Y-axis rotation to root position'''
+                r_pos = qrot(qinv(r_rot_quat), r_pos)
+
+                r_pos = torch.cumsum(r_pos, dim=-2)
+                r_pos[..., 1] = data[..., 3]
+                positions = data[..., 4:(joints_num - 1) * 3 + 4]
+                positions = positions.view(positions.shape[:-1] + (-1, 3))
+                '''Add Y-axis rotation to local joints'''
+                positions = qrot(qinv(r_rot_quat[..., None, :]).expand(positions.shape[:-1] + (4,)), positions)
+
+                '''Add root XZ to joints'''
+                positions[..., 0] += r_pos[..., 0:1]
+                positions[..., 2] += r_pos[..., 2:3]
+
+                '''Concate root and joints'''
+                positions = torch.cat([r_pos.unsqueeze(-2), positions], dim=-2)
+
+                return positions, r_rot_quat
+            def reverse_recover_from_ric(positions, joints_num, r_rot_quat,data_original):
+                data = data_original.clone()
+                r_pos = positions[...,0,:] # torch.Size([10, 1, 196, 3])
+                positions = positions[...,1:,:] # torch.Size([10, 1, 196, 21, 3])
+                '''Remove root XZ to joints'''
+                positions[..., 0] -= r_pos[..., 0:1]
+                positions[..., 2] -= r_pos[..., 2:3]                
+                '''Remove Y-axis rotation to local joints'''          
+                positions = qrot(r_rot_quat[..., None, :].expand(positions.shape[:-1] + (4,)), positions)
+                positions = positions.view(positions.shape[:-2] + (-1,))
+                data[..., 4:(joints_num - 1) * 3 + 4] = positions
+                return data
+            joints_num = 22 if model_output.shape[1] == 263 else 21
+            model_output_before = model_output.clone()
+            model_output_before = model_output_before.cpu().permute(0, 2, 3, 1) # torch.Size([10, 1, 196, 263])
+            # used by our models
+            mean = np.load('././dataset/HumanML3D/Mean.npy')
+            std = np.load('././dataset/HumanML3D/Std.npy')
+            model_output_before = model_output_before * std + mean
+            model_output_xyz, r_rot_quat = recover_from_ric(model_output_before, joints_num) # torch.Size([10, 1, 196, 22, 3])
+            # DO SOME MODIFICATION HERE
+            frame_size = model_output_before.shape[-1]
+            import data_loaders.humanml_utils as hml_utils
+            model_output_xyz[0,0,0:int(frame_size/2), hml_utils.HML_JOINT_NAMES.index('right_wrist'), 1] = model_output_xyz[0,0,0:int(frame_size/2), hml_utils.HML_JOINT_NAMES.index('pelvis'), 1]  
+            model_output_xyz[0,0,int(frame_size/2):-1, hml_utils.HML_JOINT_NAMES.index('right_wrist'), 1] = model_output_xyz[0,0,int(frame_size/2):-1, hml_utils.HML_JOINT_NAMES.index('right_shoulder'), 1]
+            model_output_xyz[0,0,int(frame_size/2):-1, hml_utils.HML_JOINT_NAMES.index('right_wrist'), 0] = model_output_xyz[0,0,int(frame_size/2):-1, hml_utils.HML_JOINT_NAMES.index('right_shoulder'), 0] - 0.1            
+            # Reverse the conversion
+            model_output_after = reverse_recover_from_ric(model_output_xyz, joints_num, r_rot_quat, model_output_before)
+            model_output_after = (model_output_after - mean) / std
+            model_output_after = model_output_after.permute(0, 3, 1, 2).to(model_output.device)
+
+            if False:
+                import matplotlib.pyplot as plt
+                import data_loaders.humanml.utils.paramUtil as paramUtil
+                fig = plt.figure(figsize=(5,5))
+                plt.tight_layout()
+                #ax = p3.Axes3D(fig)
+                ax = plt.axes(projection='3d')
+                ax.view_init(elev=120, azim=-90)
+                kinematic_tree = paramUtil.t2m_kinematic_chain
+                used_colors = ["#DD5A37", "#D69E00", "#B75A39", "#FF6D00", "#DDB50E"]
+                for i, (chain, color) in enumerate(zip(kinematic_tree, used_colors)):
+                    if i < 5:
+                        linewidth = 4.0
+                    else:
+                        linewidth = 2.0
+                    ax.plot3D(model_output_xyz[0, 0, 0, chain, 0], model_output_xyz[0,0,0, chain, 1], model_output_xyz[0,0,0, chain, 2], linewidth=linewidth, 
+                            color=color)
+                
+                ax.scatter(model_output_xyz[0,0,0, hml_utils.HML_JOINT_NAMES.index('pelvis'), 0], model_output_xyz[0,0,0, hml_utils.HML_JOINT_NAMES.index('pelvis'), 1], 
+                        model_output_xyz[0,0,0, hml_utils.HML_JOINT_NAMES.index('pelvis'), 2], c='blue', marker='.', s=100)
+                ax.scatter(model_output_xyz[0,0,0, hml_utils.HML_JOINT_NAMES.index('right_wrist'), 0], model_output_xyz[0,0,0,  hml_utils.HML_JOINT_NAMES.index('right_wrist'), 1], 
+                        model_output_xyz[0,0,0, hml_utils.HML_JOINT_NAMES.index('right_wrist'), 2], c='red', marker='.', s=100)
+                # save the figure
+                ax.set_aspect('equal', 'box')
+                plt.savefig('check2_{}.png'.format(0))     
+                import pdb; pdb.set_trace()
+            frame_size = model_output.shape[-1]
+            for jj in range(int(frame_size/2)):
+                blend = float(jj)/(int(frame_size/2)-1)
+                #blend=0
+                model_output[:,:,:,jj] = model_output[:,:,:,jj] * blend + model_output_after[:,:,:,jj] * (1-blend)
+                model_output[:,:,:,-jj-1] = model_output[:,:,:,-jj-1] * blend + model_output_after[:,:,:,-jj-1] * (1-blend)
         if self.model_var_type in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]:
             assert model_output.shape == (B, C * 2, *x.shape[2:])
             model_output, model_var_values = th.split(model_output, C, dim=1)

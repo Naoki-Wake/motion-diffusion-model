@@ -6,6 +6,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation, FFMpegFileWriter
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import mpl_toolkits.mplot3d.axes3d as p3
+import data_loaders.humanml_utils as hml_utils
 # import cv2
 from textwrap import wrap
 
@@ -24,7 +25,7 @@ def list_cut_average(ll, intervals):
     return ll_new
 
 
-def plot_3d_motion(save_path, kinematic_tree, joints, title, dataset, figsize=(3, 3), fps=120, radius=3,
+def plot_3d_motion(save_path, kinematic_tree, joints, title, dataset, figsize=(5, 5), fps=120, radius=3,
                    vis_mode='default', gt_frames=[]):
     matplotlib.use('Agg')
 
@@ -36,7 +37,7 @@ def plot_3d_motion(save_path, kinematic_tree, joints, title, dataset, figsize=(3
         ax.set_zlim3d([-radius / 3., radius * 2 / 3.])
         # print(title)
         fig.suptitle(title, fontsize=10)
-        ax.grid(b=False)
+        ax.grid(b=True)
 
     def plot_xzPlane(minx, maxx, miny, minz, maxz):
         ## Plot a plane XZ
@@ -62,7 +63,7 @@ def plot_3d_motion(save_path, kinematic_tree, joints, title, dataset, figsize=(3
         data *= 1.3  # scale for visualization
     elif dataset in ['humanact12', 'uestc']:
         data *= -1.5 # reverse axes, scale for visualization
-
+    print(data[0,0,:])
     fig = plt.figure(figsize=figsize)
     plt.tight_layout()
     #ax = p3.Axes3D(fig)
@@ -86,6 +87,7 @@ def plot_3d_motion(save_path, kinematic_tree, joints, title, dataset, figsize=(3
     data[:, :, 1] -= height_offset
     trajec = data[:, 0, [0, 2]]
 
+    # offset the root joint to the origin
     data[..., 0] -= data[:, 0:1, 0]
     data[..., 2] -= data[:, 0:1, 2]
 
@@ -98,9 +100,14 @@ def plot_3d_motion(save_path, kinematic_tree, joints, title, dataset, figsize=(3
         ax.cla()
         ax.view_init(elev=120, azim=-90)
         ax.dist = 7.5
+        ax.set_xlim3d([-np.max(abs(data[:, :, 0])), np.max(abs(data[:, :, 0]))])
+        ax.set_ylim3d([np.min(abs(data[:, :, 1])), np.max(abs(data[:, :, 1]))])
+        ax.set_zlim3d([-np.max(abs(data[:, :, 2])), np.max(abs(data[:, :, 2]))])
+        ax.set_aspect('equal', 'box')
+        #import pdb;pdb.set_trace()
         #         ax =
-        plot_xzPlane(MINS[0] - trajec[index, 0], MAXS[0] - trajec[index, 0], 0, MINS[2] - trajec[index, 1],
-                     MAXS[2] - trajec[index, 1])
+        #plot_xzPlane(MINS[0] - trajec[index, 0], MAXS[0] - trajec[index, 0], 0, MINS[2] - trajec[index, 1], MAXS[2] - trajec[index, 1])
+        plot_xzPlane(-np.max(abs(data[:, :, 0])), np.max(abs(data[:, :, 0])), np.min(abs(data[:, :, 1])), -np.max(abs(data[:, :, 2])), np.max(abs(data[:, :, 2])))
         #         ax.scatter(dataset[index, :22, 0], dataset[index, :22, 1], dataset[index, :22, 2], color='black', s=3)
 
         # if index > 1:
@@ -118,11 +125,18 @@ def plot_3d_motion(save_path, kinematic_tree, joints, title, dataset, figsize=(3
             ax.plot3D(data[index, chain, 0], data[index, chain, 1], data[index, chain, 2], linewidth=linewidth, 
                       color=color)
         #         print(trajec[:index, 0].shape)
-
-        plt.axis('off')
-        ax.set_xticklabels([])
-        ax.set_yticklabels([])
-        ax.set_zticklabels([])
+        ax.scatter(data[index, hml_utils.HML_JOINT_NAMES.index('pelvis'), 0], data[index, hml_utils.HML_JOINT_NAMES.index('pelvis'), 1], 
+                   data[index, hml_utils.HML_JOINT_NAMES.index('pelvis'), 2], c='blue', marker='.', s=100)
+        ax.scatter(data[index, hml_utils.HML_JOINT_NAMES.index('right_wrist'), 0], data[index, hml_utils.HML_JOINT_NAMES.index('right_wrist'), 1], 
+                   data[index, hml_utils.HML_JOINT_NAMES.index('right_wrist'), 2], c='red', marker='.', s=100)
+        #import pdb;pdb.set_trace()
+        vector_to_right_wrist = data[index, hml_utils.HML_JOINT_NAMES.index('right_wrist'), :] - data[index, hml_utils.HML_JOINT_NAMES.index('pelvis'), :]
+        # format: 
+        #plt.title('vector:{:.1f}, {:.1f}, {:.1f}'.format(vector_to_right_wrist[0], vector_to_right_wrist[1], vector_to_right_wrist[2]), fontsize=15)
+        plt.title('frame:{}%'.format(int(float(index+1) / frame_number * 100)), fontsize=15)
+        # set label name as x y z
+        ax.set_xlabel('x', fontsize=10)
+        ax.set_ylabel('y', fontsize=10)
 
     ani = FuncAnimation(fig, update, frames=frame_number, interval=1000 / fps, repeat=False)
 

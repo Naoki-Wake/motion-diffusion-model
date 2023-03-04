@@ -94,6 +94,7 @@ bash prepare/download_recognition_models.sh
 
 ```bash
 bash prepare/download_smpl_files.sh
+bash prepare/download_recognition_models.sh
 bash prepare/download_recognition_unconstrained_models.sh
 ```
 </details>
@@ -244,7 +245,7 @@ python -m sample.generate --model_path ./save/humanact12/model000350000.pt --act
 ### Generate a single action
 
 ```shell
-python -m sample.generate --model_path ./save/humanact12/model000350000.pt --text_prompt "drink"
+python -m sample.generate --model_path ./save/humanact12/model000350000.pt --action_name "drink"
 ```
 </details>
 
